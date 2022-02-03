@@ -8,7 +8,8 @@ import (
 	certretrival "github.com/edgefarm/vault-integration/pkg/certretrieval"
 )
 
-func setFallbackByEnd(target *string, envName string) {
+// setFallbackByEnv sets the string to the value of the given env variable, if it is unset
+func setFallbackByEnv(target *string, envName string) {
 	if *target == "" {
 		*target = os.Getenv(envName)
 	}
@@ -28,14 +29,14 @@ func main() {
 	flags.StringVar(&config.ServerCA, "serverca", "", "(env: VAULT_CACERT)")
 	flags.StringVar(&config.Vault, "vault", "", "(env: VAULT_ADDR)")
 
-	setFallbackByEnd(&config.Tokenfile, "VAULT_TOKEN")
-	setFallbackByEnd(&config.Name, "COMMON_NAME")
-	setFallbackByEnd(&config.OutCAfile, "CA_FILE")
-	setFallbackByEnd(&config.OutCertfile, "CERT_FILE")
-	setFallbackByEnd(&config.OutKeyfile, "KEY_FILE")
-	setFallbackByEnd(&config.Role, "ROLE")
-	setFallbackByEnd(&config.ServerCA, "VAULT_CACERT")
-	setFallbackByEnd(&config.Vault, "VAULT_ADDR")
+	setFallbackByEnv(&config.Tokenfile, "VAULT_TOKEN")
+	setFallbackByEnv(&config.Name, "COMMON_NAME")
+	setFallbackByEnv(&config.OutCAfile, "CA_FILE")
+	setFallbackByEnv(&config.OutCertfile, "CERT_FILE")
+	setFallbackByEnv(&config.OutKeyfile, "KEY_FILE")
+	setFallbackByEnv(&config.Role, "ROLE")
+	setFallbackByEnv(&config.ServerCA, "VAULT_CACERT")
+	setFallbackByEnv(&config.Vault, "VAULT_ADDR")
 
 	cr, err := certretrival.New(config)
 	if err != nil {

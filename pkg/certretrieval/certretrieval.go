@@ -38,7 +38,7 @@ type Config struct {
 	OutKeyfile  string
 }
 
-// Validate
+// Validate the configuration
 func (c Config) Validate() error {
 	var errors []error
 	if c.Tokenfile == "" {
@@ -76,10 +76,12 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// CertRetrieval manages the retrieval and replacement of certificates
 type CertRetrieval struct {
 	Config
 }
 
+// New creates a new CertRetrieval type
 func New(config Config) (*CertRetrieval, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -88,6 +90,7 @@ func New(config Config) (*CertRetrieval, error) {
 	return &CertRetrieval{Config: config}, nil
 }
 
+// UnixTime is a wrapper of time.Time with a suitable JSON marshalling
 type UnixTime time.Time
 
 func (ut UnixTime) MarshalJSON() (data []byte, err error) {
@@ -105,6 +108,7 @@ func (ut *UnixTime) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// StringList is a wrapper for a string slice with suitable json marshalling
 type StringList []string
 
 func (sl StringList) MarshalJSON() ([]byte, error) {
@@ -116,6 +120,7 @@ func (sl *StringList) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// CertificateRequest implements the Vault certificate requests
 type CertificateRequest struct {
 	Name              string     `json:"name,omitempty"`
 	CommonName        string     `json:"common_name,omitempty"`
@@ -129,6 +134,7 @@ type CertificateRequest struct {
 	ExcludeCnFromSans bool       `json:"exclude_cn_from_sans,omitempty"`
 }
 
+// CertificateData is a subtype used in CertificateResponse
 type CertificateData struct {
 	Certificate    string   `json:"certificate,omitempty"`
 	Expiration     UnixTime `json:"expiration,omitempty"`
@@ -138,6 +144,7 @@ type CertificateData struct {
 	SerialNumber   string   `json:"serial_number,omitempty"`
 }
 
+// CertificateResponse implementes the Vault response for a certificate request
 type CertificateResponse struct {
 	RequestId     string          `json:"request_id,omitempty"`
 	LeaseId       string          `json:"lease_id,omitempty"`
@@ -146,6 +153,8 @@ type CertificateResponse struct {
 	Data          CertificateData `json:"data,omitempty"`
 }
 
+// marshal serializes an arbitrary object into json and returns a io.Reader for the result.
+// Suitable for http request body definition
 func marshal(v interface{}) (io.Reader, error) {
 	buffer := bytes.Buffer{}
 	encoder := json.NewEncoder(&buffer)
@@ -156,6 +165,7 @@ func marshal(v interface{}) (io.Reader, error) {
 	return &buffer, nil
 }
 
+// readToken reads the Vault token
 func (cr *CertRetrieval) readToken() (string, error) {
 	data, err := os.ReadFile(cr.Tokenfile)
 	if err != nil {
@@ -164,6 +174,7 @@ func (cr *CertRetrieval) readToken() (string, error) {
 	return string(data), nil
 }
 
+// retrieveCert executes the http request to retrieve a new certificate from vault
 func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 	token, err := cr.readToken()
 	if err != nil {
@@ -199,7 +210,7 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 		return nil, nil
 	}
 
-	request, err := http.NewRequest("POST", address.String(), requestBody)
+	request, err := http.NewRequest(http.MethodPost, address.String(), requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to create request: %v", ErrRetrieval, err)
 	}
@@ -225,6 +236,8 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 	return &certificate, nil
 }
 
+// storeFile writes the passed data to a _temporary_ file in the same directory
+// as the target file. The targetfile is _not_ modified
 func (cr *CertRetrieval) storeFile(data []byte, targetFile string) (string, error) {
 	dir := filepath.Dir(targetFile)
 	name := filepath.Base(targetFile)
@@ -243,6 +256,7 @@ func (cr *CertRetrieval) storeFile(data []byte, targetFile string) (string, erro
 	return file.Name(), nil
 }
 
+// storeCertificate stores the certificate data into the target files
 func (cr *CertRetrieval) storeCertificate(certificate *CertificateResponse) error {
 	var certFile, keyFile, caFile string
 	var err error
@@ -278,6 +292,7 @@ func (cr *CertRetrieval) storeCertificate(certificate *CertificateResponse) erro
 	return nil
 }
 
+// Retrieve performs the certificate retrieval
 func (cr *CertRetrieval) Retrieve() error {
 	certificate, err := cr.retrieveCert()
 	if err != nil {
