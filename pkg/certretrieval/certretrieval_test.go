@@ -23,6 +23,7 @@ import (
 const (
 	tmpdir  = "../../tmp/"
 	keysize = 768
+	certUrl = "/pki/issue/client"
 )
 
 type MiniCa struct {
@@ -31,10 +32,10 @@ type MiniCa struct {
 	caKey        *rsa.PrivateKey
 }
 
-func newCA() (*MiniCa, error) {
+func newCA(t *testing.T) *MiniCa {
 	privateKey, err := rsa.GenerateKey(rand.Reader, keysize)
 	if err != nil {
-		return nil, err
+		t.Fatalf("Failed to create ca key: %v", err)
 	}
 
 	template := &x509.Certificate{
@@ -51,11 +52,11 @@ func newCA() (*MiniCa, error) {
 	}
 	cert, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
 	if err != nil {
-		return nil, err
+		t.Fatalf("Failed to create certificate: %v", err)
 	}
 	caCert := &x509.Certificate{Raw: cert, PublicKey: &privateKey.PublicKey}
 
-	return &MiniCa{serialNumber: template.SerialNumber, caCert: caCert, caKey: privateKey}, nil
+	return &MiniCa{serialNumber: template.SerialNumber, caCert: caCert, caKey: privateKey}
 }
 
 func (ca *MiniCa) createServerCert() (*x509.Certificate, *rsa.PrivateKey, error) {
@@ -96,7 +97,7 @@ func (ca *MiniCa) createClientCert() (*x509.Certificate, *rsa.PrivateKey, error)
 		},
 		IsCA:        false,
 		NotBefore:   time.Now(),
-		NotAfter:    time.Now().Add(1 * time.Hour),
+		NotAfter:    time.Now().Add(24 * time.Hour),
 		KeyUsage:    x509.KeyUsageDataEncipherment | x509.KeyUsageKeyAgreement,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
@@ -108,10 +109,10 @@ func (ca *MiniCa) createClientCert() (*x509.Certificate, *rsa.PrivateKey, error)
 	return serverCert, privateKey, nil
 }
 
-func (ca *MiniCa) createTlsConfig() (*tls.Config, error) {
+func (ca *MiniCa) createTlsConfig() (*tls.Config, string, error) {
 	cert, key, err := ca.createServerCert()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	pool := x509.NewCertPool()
 	pool.AddCert(ca.caCert)
@@ -122,20 +123,27 @@ func (ca *MiniCa) createTlsConfig() (*tls.Config, error) {
 		RootCAs:      pool,
 	}
 
-	return config, nil
+	builder := strings.Builder{}
+	pem.Encode(&builder, &pem.Block{Type: "CERTIFICATE", Bytes: ca.caCert.Raw})
+	caCert := builder.String()
+
+	return config, caCert, nil
 }
 
-func TestRetrieval(t *testing.T) {
-	os.MkdirAll(tmpdir, 0755)
-	os.WriteFile(tmpdir+"/token.txt", []byte("dummy token"), 0644)
-
-	ca, err := newCA()
+func (ca *MiniCa) createServer(t *testing.T, handler http.Handler) (*httptest.Server, string) {
+	server := httptest.NewUnstartedServer(handler)
+	tlsConfig, caCert, err := ca.createTlsConfig()
 	if err != nil {
-		t.Fatalf("Failed to create ca: %v", err)
+		t.Fatalf("Failed to create tls config: %v", err)
 	}
+	server.TLS = tlsConfig
+	server.StartTLS()
+	return server, caCert
+}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/pki/issue/client", func(rw http.ResponseWriter, r *http.Request) {
+func certificateHandler(t *testing.T, ca *MiniCa, callCounter *int) http.HandlerFunc {
+	return func(rw http.ResponseWriter, r *http.Request) {
+		(*callCounter)++
 		encoder := json.NewEncoder(rw)
 
 		cert, key, err := ca.createClientCert()
@@ -176,19 +184,32 @@ func TestRetrieval(t *testing.T) {
 		if err := encoder.Encode(response); err != nil {
 			t.Fatalf("Failed to encode response: %v", err)
 		}
-	})
-	server := httptest.NewUnstartedServer(mux)
-	tlsConfig, err := ca.createTlsConfig()
-	if err != nil {
-		t.Fatalf("Failed to create tls config: %v", err)
+	}
+}
+
+func setup(t *testing.T) {
+	if err := os.RemoveAll(tmpdir); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("Failed to remove tmp directory %q: %v", tmpdir, err)
 	}
 
-	builder := strings.Builder{}
-	pem.Encode(&builder, &pem.Block{Type: "CERTIFICATE", Bytes: ca.caCert.Raw})
-	caCert := builder.String()
+	if err := os.MkdirAll(tmpdir, 0755); err != nil {
+		t.Fatalf("Failed to create diretory %q: %v", tmpdir, err)
+	}
 
-	server.TLS = tlsConfig
-	server.StartTLS()
+	if err := os.WriteFile(tmpdir+"/token.txt", []byte("dummy token"), 0644); err != nil {
+		t.Fatalf("Failed create dummy token: %v", err)
+	}
+
+}
+func TestRetrieval(t *testing.T) {
+	setup(t)
+	ca := newCA(t)
+
+	var invocations int
+	mux := http.NewServeMux()
+	mux.HandleFunc(certUrl, certificateHandler(t, ca, &invocations))
+	server, caCert := ca.createServer(t, mux)
+
 	config := Config{
 		Tokenfile:   tmpdir + "/token.txt",
 		Vault:       server.URL,
@@ -199,6 +220,7 @@ func TestRetrieval(t *testing.T) {
 		OutCertfile: tmpdir + "/client.crt",
 		OutKeyfile:  tmpdir + "/client.key",
 	}
+
 	cr, err := New(config)
 	if err != nil {
 		t.Fatalf("Failed to create cert retrieval: %v", err)
@@ -211,6 +233,10 @@ func TestRetrieval(t *testing.T) {
 	var data []byte
 	data, _ = os.ReadFile(config.OutCAfile)
 
+	if expected := 1; expected != invocations {
+		t.Errorf("Wrong number of invocations, expected %d but got %d", expected, invocations)
+	}
+
 	if !strings.HasPrefix(string(data), "-----BEGIN CERTIFICATE-----") {
 		t.Errorf("Wrong ca. Expected cert but got %s", data)
 	}
@@ -221,6 +247,42 @@ func TestRetrieval(t *testing.T) {
 	data, _ = os.ReadFile(config.OutKeyfile)
 	if !strings.HasPrefix(string(data), "-----BEGIN RSA PRIVATE KEY-----") {
 		t.Errorf("Wrong key. Expected private key but got %s", data)
+	}
+}
+
+func TestConditionalRetrieval(t *testing.T) {
+	setup(t)
+	ca := newCA(t)
+	mux := http.NewServeMux()
+	var invocations int
+	mux.HandleFunc(certUrl, certificateHandler(t, ca, &invocations))
+	server, caCert := ca.createServer(t, mux)
+
+	config := Config{
+		Tokenfile:              tmpdir + "/token.txt",
+		Vault:                  server.URL,
+		Role:                   "client",
+		Name:                   "edge0.ci4rail.com",
+		ServerCA:               caCert,
+		OutCAfile:              tmpdir + "/ca.crt",
+		OutCertfile:            tmpdir + "/client.crt",
+		OutKeyfile:             tmpdir + "/client.key",
+		ValidityCheckTolerance: 80,
+	}
+
+	cr, err := New(config)
+	if err != nil {
+		t.Fatalf("Failed to create cert retrieval: %v", err)
+	}
+
+	for i := 0; i < 3; i++ {
+
+		if err := cr.Retrieve(); err != nil {
+			t.Fatalf("Failed to retrieve: %v", err)
+		}
+	}
+	if expected := 1; expected != invocations {
+		t.Errorf("Wrong number of retrievals, expected %d but got %d", expected, invocations)
 	}
 
 }

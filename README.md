@@ -25,3 +25,4 @@ The process may be configured using command line parameters and environment vari
 |ca|CA_FILE|Target filename for the issuing CA certificate, stored in PEM format|
 |cert|CERT_FILE|Target filename for the new certificate, stored in PEM format|
 |key|KEY_FILE|Target filename for the private key associated with the new certificate, stored in PEM format|
+|checktolerance|n/a|If defined, the validity of the current certificate is checked. If the certificate is not stale, the retrieval of a new certificate is skipped. The tolerance defines how close to the end of the validity period the certificate has to be: e.g. 80 means that the certificate is considered stale, if only 20% of the validity period remain. Note: For the same reasoning as used within kubeedge, a random jitter is added to the check |

@@ -27,11 +27,12 @@ var (
 
 // Config is the configuration for the certrieval
 type Config struct {
-	Tokenfile string
-	Vault     string
-	ServerCA  string
-	Role      string
-	Name      string
+	Tokenfile              string
+	Vault                  string
+	ServerCA               string
+	Role                   string
+	Name                   string
+	ValidityCheckTolerance int64
 
 	OutCAfile   string
 	OutCertfile string
@@ -67,6 +68,10 @@ func (c Config) Validate() error {
 
 	if c.OutKeyfile == "" {
 		errors = append(errors, fmt.Errorf("outKeyfile not defined"))
+	}
+
+	if c.ValidityCheckTolerance < 0 || 100 < c.ValidityCheckTolerance {
+		errors = append(errors, fmt.Errorf("checktolerance must be between 0 and 100"))
 	}
 
 	if errors != nil {
@@ -292,8 +297,57 @@ func (cr *CertRetrieval) storeCertificate(certificate *CertificateResponse) erro
 	return nil
 }
 
+func (cr *CertRetrieval) oldCertIsStale() bool {
+	_, err := os.Stat(cr.OutCertfile)
+	if os.IsNotExist(err) {
+		// Certfile does not exist => retrieve it anyways
+		return true
+	}
+	pemData, err := os.ReadFile(cr.OutCertfile)
+	if err != nil {
+		log.Printf("Error while reading old certificate %q: %v", cr.OutCertfile, err)
+		return true
+	}
+
+	certData, _ := pem.Decode(pemData)
+	if certData == nil {
+		log.Printf("No PEM data found in %q", cr.OutCertfile)
+		return true
+	}
+
+	cert, err := x509.ParseCertificate(certData.Bytes)
+	if err != nil {
+		log.Printf("Certificate is not parseable: %v", err)
+		return true
+	}
+	remainingValidity := time.Until(cert.NotAfter)
+	if remainingValidity < 0 {
+		// expired in the past => is stale
+		return true
+	}
+
+	if cr.ValidityCheckTolerance == 0 {
+		// no tolerance check defined, so this certificate is still valid
+		return false
+	}
+
+	// calculate the percentage of the total lifetime of the cert
+	lifetime := cert.NotAfter.Sub(cert.NotBefore) * time.Duration(cr.ValidityCheckTolerance) / 100
+	// convert the lifetime into an absolute point in time
+	limit := time.Now().Add(lifetime)
+
+	// return true  we are not in the acceptable range of the validity period anymore
+	return limit.Before(time.Now())
+}
+
 // Retrieve performs the certificate retrieval
 func (cr *CertRetrieval) Retrieve() error {
+	if !cr.oldCertIsStale() {
+		log.Printf("Old certificate in %q is still valid, not retrieving new one", cr.OutCertfile)
+		return nil
+	}
+
+	log.Printf("Old certificate in %q is stale or does not exist, retrieving new one", cr.OutCertfile)
 	certificate, err := cr.retrieveCert()
 	if err != nil {
 		return err
