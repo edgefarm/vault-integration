@@ -25,5 +25,22 @@ The process may be configured using command line parameters and environment vari
 | ca | CA_FILE | Target filename for the issuing CA certificate, stored in PEM format | 
 | cert | CERT_FILE | Target filename for the new certificate, stored in PEM format | 
 | key | KEY_FILE | Target filename for the private key associated with the new certificate, stored in PEM format | 
-| checktolerance | n/a | If defined, the validity of the current certificate is checked. If the certificate is not stale, the retrieval of a new certificate is skipped. The tolerance defines how close to the end of the validity period the certificate has to be: e.g. 80 means that the certificate is considered stale, if only 20% of the validity period remain. Note: For the same reasoning as used within kubeedge, a random jitter is added to the check |
+| checktolerance | n/a | If defined, the validity of the current certificate is checked. If the certificate is not stale, the retrieval of a new certificate is skipped. The tolerance defines how close to the end of the validity period the certificate has to be: e.g. 80 means that the certificate is considered stale, if only 20% of the validity period remain. |
 | ttl | TTL | The time to live of the newly created  certificate. The server may impose a shorter limit. |
+
+
+
+# Technical notes
+
+Create Token role
+
+
+    vault write auth/token/roles/pki-client allowed_policies=pki-client renewable=true token_explicit_max_ttl=24h token_no_default_policy=true allowed_entity_aliases=*.token
+
+Create alias
+
+    vault write identity/entity-alias name=edge0.token canonical_id=4e537ff7-ebc4-32a3-cf3a-77db8c1e0fb3 mount_accessor=auth_token_945fa6db
+
+Create token
+
+    vault write auth/token/create/pki-client entity_alias=edge0.token
