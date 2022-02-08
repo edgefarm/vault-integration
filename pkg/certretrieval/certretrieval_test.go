@@ -21,9 +21,9 @@ import (
 )
 
 const (
-	tmpdir  = "../../tmp/"
+	tmpdir  = "../../tmp"
 	keysize = 768
-	certUrl = "/pki/issue/client"
+	certUrl = "/v1/pki/issue/client"
 )
 
 type MiniCa struct {
@@ -209,13 +209,16 @@ func TestRetrieval(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc(certUrl, certificateHandler(t, ca, &invocations))
 	server, caCert := ca.createServer(t, mux)
+	if err:=os.WriteFile(tmpdir+"/server-ca.crt", []byte(caCert), 0755);err != nil {
+		t.Fatal(err)
+	}
 
 	config := Config{
 		Tokenfile:   tmpdir + "/token.txt",
 		Vault:       server.URL,
 		Role:        "client",
 		Name:        "edge0.ci4rail.com",
-		ServerCA:    caCert,
+		ServerCA:    tmpdir + "/server-ca.crt",
 		OutCAfile:   tmpdir + "/ca.crt",
 		OutCertfile: tmpdir + "/client.crt",
 		OutKeyfile:  tmpdir + "/client.key",
@@ -257,13 +260,16 @@ func TestConditionalRetrieval(t *testing.T) {
 	var invocations int
 	mux.HandleFunc(certUrl, certificateHandler(t, ca, &invocations))
 	server, caCert := ca.createServer(t, mux)
+	if err := os.WriteFile(tmpdir+"/server-ca.crt", []byte(caCert), 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	config := Config{
 		Tokenfile:              tmpdir + "/token.txt",
 		Vault:                  server.URL,
 		Role:                   "client",
 		Name:                   "edge0.ci4rail.com",
-		ServerCA:               caCert,
+		ServerCA:               tmpdir + "/server-ca.crt",
 		OutCAfile:              tmpdir + "/ca.crt",
 		OutCertfile:            tmpdir + "/client.crt",
 		OutKeyfile:             tmpdir + "/client.key",
