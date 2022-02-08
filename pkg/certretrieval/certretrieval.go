@@ -206,7 +206,7 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 		if cr.ServerCA != "" {
 			crPem, err := os.ReadFile(cr.ServerCA)
 			if err != nil {
-				return nil, fmt.Errorf("%w: failed to CA certificafte from %q: %v", ErrRetrieval, cr.ServerCA, err)
+				return nil, fmt.Errorf("%w: failed to read CA certificafte from %q: %v", ErrRetrieval, cr.ServerCA, err)
 			}
 			block, _ := pem.Decode([]byte(crPem))
 			caCert, err := x509.ParseCertificate(block.Bytes)
