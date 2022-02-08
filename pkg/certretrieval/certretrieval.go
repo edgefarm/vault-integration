@@ -28,11 +28,14 @@ var (
 // Config is the configuration for the certrieval
 type Config struct {
 	Tokenfile              string
+	Token                  string
 	Vault                  string
 	ServerCA               string
 	Role                   string
 	Name                   string
 	ValidityCheckTolerance int64
+	Force                  bool
+	TTL                    time.Duration
 
 	OutCAfile   string
 	OutCertfile string
@@ -42,7 +45,7 @@ type Config struct {
 // Validate the configuration
 func (c Config) Validate() error {
 	var errors []error
-	if c.Tokenfile == "" {
+	if c.Tokenfile == "" && c.Token == "" {
 		errors = append(errors, fmt.Errorf("tokenfile not defined"))
 	}
 
@@ -172,6 +175,11 @@ func marshal(v interface{}) (io.Reader, error) {
 
 // readToken reads the Vault token
 func (cr *CertRetrieval) readToken() (string, error) {
+	if cr.Token != "" {
+		log.Printf("Using token from env variable")
+		return cr.Token, nil
+	}
+
 	data, err := os.ReadFile(cr.Tokenfile)
 	if err != nil {
 		return "", err
@@ -186,7 +194,7 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 		return nil, err
 	}
 
-	raw := cr.Vault + "/pki/issue/" + cr.Role
+	raw := cr.Vault + "/v1/pki/issue/" + cr.Role
 	address, err := url.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid url %q: %v", ErrRetrieval, raw, err)
@@ -196,7 +204,11 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 	if address.Scheme == "https" {
 		caPool := x509.NewCertPool()
 		if cr.ServerCA != "" {
-			block, _ := pem.Decode([]byte(cr.ServerCA))
+			crPem, err := os.ReadFile(cr.ServerCA)
+			if err != nil {
+				return nil, fmt.Errorf("%w: failed to CA certificafte from %q: %v", ErrRetrieval, cr.ServerCA, err)
+			}
+			block, _ := pem.Decode([]byte(crPem))
 			caCert, err := x509.ParseCertificate(block.Bytes)
 			if err != nil {
 				return nil, fmt.Errorf("%w: failed to parse CA certificate: %v", ErrRetrieval, err)
@@ -210,7 +222,12 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 		}
 	}
 	client := http.Client{Transport: &transport}
-	requestBody, err := marshal(CertificateRequest{CommonName: cr.Name})
+	certRequest := CertificateRequest{CommonName: cr.Name}
+	if cr.TTL > 0 {
+		certRequest.TTL = cr.TTL.String()
+		log.Printf("Request certificate with TTL %v", certRequest.TTL)
+	}
+	requestBody, err := marshal(certRequest)
 	if err != nil {
 		return nil, nil
 	}
@@ -269,10 +286,12 @@ func (cr *CertRetrieval) storeCertificate(certificate *CertificateResponse) erro
 	if err != nil {
 		return err
 	}
+
 	keyFile, err = cr.storeFile([]byte(certificate.Data.PrivateKey), cr.OutKeyfile)
 	if err != nil {
 		return err
 	}
+
 	if cr.OutCAfile != "" {
 		caFile, err = cr.storeFile([]byte(certificate.Data.IssuingCa), cr.OutCAfile)
 		if err != nil {
@@ -283,21 +302,27 @@ func (cr *CertRetrieval) storeCertificate(certificate *CertificateResponse) erro
 	if err := os.Rename(certFile, cr.OutCertfile); err != nil {
 		return fmt.Errorf("%w: failed to rename certfile: %v", ErrRetrieval, err)
 	}
+	log.Printf("Wrote certificate to %s", cr.OutCertfile)
 
 	if err := os.Rename(keyFile, cr.OutKeyfile); err != nil {
 		return fmt.Errorf("%w: failed to rename keyfile: %v", ErrRetrieval, err)
 	}
+	log.Printf("Wrote keyfile to %s", cr.OutKeyfile)
 
 	if cr.OutCAfile != "" {
 		if err := os.Rename(caFile, cr.OutCAfile); err != nil {
 			return fmt.Errorf("%w: failed to rename cafile: %v", ErrRetrieval, err)
 		}
+		log.Printf("Wrote signing certificate to %s", cr.OutCAfile)
 	}
 
 	return nil
 }
 
 func (cr *CertRetrieval) oldCertIsStale() bool {
+	if cr.Force {
+		return true
+	}
 	_, err := os.Stat(cr.OutCertfile)
 	if os.IsNotExist(err) {
 		// Certfile does not exist => retrieve it anyways
