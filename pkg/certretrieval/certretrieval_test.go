@@ -1,4 +1,4 @@
-package certretrival
+package certretrieval
 
 import (
 	"crypto/rand"
