@@ -184,7 +184,9 @@ func (cr *CertRetrieval) readToken() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(data), nil
+	token := strings.TrimSpace(string(data))
+
+	return token, nil
 }
 
 // retrieveCert executes the http request to retrieve a new certificate from vault
