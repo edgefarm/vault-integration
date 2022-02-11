@@ -32,6 +32,7 @@ The process may be configured using command line parameters and environment vari
 
 # Technical notes
 
+## Direct login via identity token
 Create Token role
 
 
@@ -44,3 +45,57 @@ Create alias
 Create token
 
     vault write auth/token/create/pki-client entity_alias=edge0.token
+
+
+## Setup Cloudcore Cert Generation
+
+### PKI Preparation
+Define a policy that allows to create root certificates
+
+    vault policy write pki-server - << EOF
+    path "/pki/issue/server" {
+        capabilities = [ "create","update" ]
+    }
+    EOF
+
+Define a PKI role that allows to create certificte for the target domain (this role will be assigned via the login):
+
+    vault write pki/roles/server ext_key_usage=ServerAuth allowed_domains=ci4rail.com allow_subdomains=true
+
+### Kubernetes Auth Preparation
+
+Enable kubernetes auth method
+
+    vault auth enable kubernetes
+
+Configure the auth method to allow access to the cluster. For minikube:
+
+    vault write auth/kubernetes/config kubernetes_host=https://$(minikube ip):8443 kubernetes_ca_crt=$HOME/.minikube/ca.crt
+
+(adapt the port as needed)
+
+The cloudcore deployment has already created a service account:
+
+    kubectl -n kubeedge get serviceaccount cloudcore -o yaml
+
+
+Create a role that binds the serviceaccount, resp. it's secret, to a Vault role. This role defines, which in turn defines the policies available to the serviceaccount user
+    
+    vault write auth/kubernetes/role/cloudcore bound_service_account_names=cloudcore bound_service_account_namespaces=kubeedge token_policies=pki-server alias_name_source=serviceaccount_name token_no_default_policy=true
+
+### Entity Preparation
+Create a new entity representing the cloudcore server
+
+    vault write identity/entity name=cloudcore.rivendell.home
+
+Create an alias that associates the entity with the kubernetes login mechanism, i.e. when logging in using kubernetes the alias creates the brige to the entity
+
+
+    # Determine the entity id
+    export ID=$(vault read -format=json identity/entity/name/cloudcore.rivendell.home|jq -r .data.id)
+
+    # Determine the internal accessor id of the kubernetes auth method
+    export ACCESSOR=$(vault auth list -format=json|jq -r '.["kubernetes/"].accessor')
+
+    # Link the entity to the kubernetes auth method
+    vault write identity/entity-alias canonical_id=$ID mount_accessor=$ACCESSOR name=kubeedge/cloudcore

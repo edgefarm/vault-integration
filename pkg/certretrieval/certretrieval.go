@@ -3,6 +3,7 @@ package certretrieval
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
@@ -10,7 +11,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,6 +18,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	vault "github.com/hashicorp/vault/api"
+	auth "github.com/hashicorp/vault/api/auth/kubernetes"
+	"k8s.io/klog/v2"
+)
+
+const (
+	// The canonical path of a service account token in a running k8s pod
+	ServiceAccountPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 )
 
 var (
@@ -32,6 +41,7 @@ type Config struct {
 	Vault                  string
 	ServerCA               string
 	Role                   string
+	AuthRole               string
 	Name                   string
 	ValidityCheckTolerance int64
 	Force                  bool
@@ -46,7 +56,12 @@ type Config struct {
 func (c Config) Validate() error {
 	var errors []error
 	if c.Tokenfile == "" && c.Token == "" {
-		errors = append(errors, fmt.Errorf("tokenfile not defined"))
+		_, err := os.Stat(ServiceAccountPath)
+		if err != nil {
+			// check for not exist is not required anymore: Even if the file
+			// existed, it could not be read anyway
+			errors = append(errors, fmt.Errorf("token not found. Checked tokenfile path, env variable and service account path: %v", err))
+		}
 	}
 
 	if c.Vault == "" {
@@ -173,10 +188,64 @@ func marshal(v interface{}) (io.Reader, error) {
 	return &buffer, nil
 }
 
+func (cr *CertRetrieval) loginViaServiceAccount() (string, error) {
+	// code taken directly from this example:
+	// https://www.vaultproject.io/docs/auth/kubernetes#code-example
+	config := vault.DefaultConfig()
+	config.Address = cr.Vault
+	if cr.ServerCA != "" {
+		config.ConfigureTLS(&vault.TLSConfig{
+			CACert: cr.ServerCA,
+		})
+	}
+
+	client, err := vault.NewClient(config)
+	if err != nil {
+		return "", fmt.Errorf("unable to initialize Vault client: %w", err)
+	}
+
+	// The service-account token will be read from the path where the token's
+	// Kubernetes Secret is mounted. By default, Kubernetes will mount it to
+	// /var/run/secrets/kubernetes.io/serviceaccount/token, but an administrator
+	// may have configured it to be mounted elsewhere.
+	// In that case, we'll use the option WithServiceAccountTokenPath to look
+	// for the token there.
+	k8sAuth, err := auth.NewKubernetesAuth(
+		cr.AuthRole,
+		auth.WithServiceAccountTokenPath(ServiceAccountPath),
+	)
+	if err != nil {
+		return "", fmt.Errorf("unable to initialize Kubernetes auth method: %w", err)
+	}
+
+	authInfo, err := client.Auth().Login(context.TODO(), k8sAuth)
+	if err != nil {
+		return "", fmt.Errorf("unable to log in with Kubernetes auth: %w", err)
+	}
+	if authInfo == nil {
+		return "", fmt.Errorf("no auth info was returned after login")
+	}
+	token := authInfo.Auth.ClientToken
+	klog.Infof("Resulting token: %v", err)
+	return token, nil
+}
+
 // readToken reads the Vault token
 func (cr *CertRetrieval) readToken() (string, error) {
+	_, err := os.Stat(ServiceAccountPath)
+	if err == nil {
+		// Service account file exists, use it
+		token, err := cr.loginViaServiceAccount()
+		if err != nil {
+			return "", fmt.Errorf("failed to retrieve token via servic account: %v", err)
+		}
+		return token, nil
+	} else {
+		klog.Warningf("Cannot read service account file, continuing")
+	}
+
 	if cr.Token != "" {
-		log.Printf("Using token from env variable")
+		klog.Infof("Using token from env variable")
 		return cr.Token, nil
 	}
 
@@ -201,7 +270,7 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid url %q: %v", ErrRetrieval, raw, err)
 	}
-	log.Printf("URL: %v", address)
+	klog.Infof("URL: %v", address)
 	transport := http.Transport{}
 	if address.Scheme == "https" {
 		caPool := x509.NewCertPool()
@@ -227,7 +296,7 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 	certRequest := CertificateRequest{CommonName: cr.Name}
 	if cr.TTL > 0 {
 		certRequest.TTL = cr.TTL.String()
-		log.Printf("Request certificate with TTL %v", certRequest.TTL)
+		klog.Infof("Request certificate with TTL %v", certRequest.TTL)
 	}
 	requestBody, err := marshal(certRequest)
 	if err != nil {
@@ -304,18 +373,18 @@ func (cr *CertRetrieval) storeCertificate(certificate *CertificateResponse) erro
 	if err := os.Rename(certFile, cr.OutCertfile); err != nil {
 		return fmt.Errorf("%w: failed to rename certfile: %v", ErrRetrieval, err)
 	}
-	log.Printf("Wrote certificate to %s", cr.OutCertfile)
+	klog.Infof("Wrote certificate to %s", cr.OutCertfile)
 
 	if err := os.Rename(keyFile, cr.OutKeyfile); err != nil {
 		return fmt.Errorf("%w: failed to rename keyfile: %v", ErrRetrieval, err)
 	}
-	log.Printf("Wrote keyfile to %s", cr.OutKeyfile)
+	klog.Infof("Wrote keyfile to %s", cr.OutKeyfile)
 
 	if cr.OutCAfile != "" {
 		if err := os.Rename(caFile, cr.OutCAfile); err != nil {
 			return fmt.Errorf("%w: failed to rename cafile: %v", ErrRetrieval, err)
 		}
-		log.Printf("Wrote signing certificate to %s", cr.OutCAfile)
+		klog.Infof("Wrote signing certificate to %s", cr.OutCAfile)
 	}
 
 	return nil
@@ -332,19 +401,19 @@ func (cr *CertRetrieval) oldCertIsStale() bool {
 	}
 	pemData, err := os.ReadFile(cr.OutCertfile)
 	if err != nil {
-		log.Printf("Error while reading old certificate %q: %v", cr.OutCertfile, err)
+		klog.Errorf("Error while reading old certificate %q: %v", cr.OutCertfile, err)
 		return true
 	}
 
 	certData, _ := pem.Decode(pemData)
 	if certData == nil {
-		log.Printf("No PEM data found in %q", cr.OutCertfile)
+		klog.Errorf("No PEM data found in %q", cr.OutCertfile)
 		return true
 	}
 
 	cert, err := x509.ParseCertificate(certData.Bytes)
 	if err != nil {
-		log.Printf("Certificate is not parseable: %v", err)
+		klog.Errorf("Certificate is not parseable: %v", err)
 		return true
 	}
 	remainingValidity := time.Until(cert.NotAfter)
@@ -370,11 +439,11 @@ func (cr *CertRetrieval) oldCertIsStale() bool {
 // Retrieve performs the certificate retrieval
 func (cr *CertRetrieval) Retrieve() error {
 	if !cr.oldCertIsStale() {
-		log.Printf("Old certificate in %q is still valid, not retrieving new one", cr.OutCertfile)
+		klog.Infof("Old certificate in %q is still valid, not retrieving new one", cr.OutCertfile)
 		return nil
 	}
 
-	log.Printf("Old certificate in %q is stale or does not exist, retrieving new one", cr.OutCertfile)
+	klog.Infof("Old certificate in %q is stale or does not exist, retrieving new one", cr.OutCertfile)
 	certificate, err := cr.retrieveCert()
 	if err != nil {
 		return err
