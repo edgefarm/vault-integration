@@ -189,6 +189,7 @@ func marshal(v interface{}) (io.Reader, error) {
 }
 
 func (cr *CertRetrieval) loginViaServiceAccount() (string, error) {
+	klog.Info("Authorizing via service account")
 	// code taken directly from this example:
 	// https://www.vaultproject.io/docs/auth/kubernetes#code-example
 	config := vault.DefaultConfig()
@@ -226,7 +227,7 @@ func (cr *CertRetrieval) loginViaServiceAccount() (string, error) {
 		return "", fmt.Errorf("no auth info was returned after login")
 	}
 	token := authInfo.Auth.ClientToken
-	klog.Infof("Resulting token: %v", err)
+	klog.Infof("Resulting token: %v", token)
 	return token, nil
 }
 
@@ -300,7 +301,7 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 	}
 	requestBody, err := marshal(certRequest)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	request, err := http.NewRequest(http.MethodPost, address.String(), requestBody)
@@ -448,6 +449,9 @@ func (cr *CertRetrieval) Retrieve() error {
 	if err != nil {
 		return err
 	}
-	cr.storeCertificate(certificate)
+	klog.Info("Retrieved certificates successfully, storing to file")
+	if err := cr.storeCertificate(certificate); err != nil {
+		klog.Errorf("Failed to store certificates: %v", err)
+	}
 	return nil
 }
