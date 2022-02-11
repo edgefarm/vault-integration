@@ -9,9 +9,7 @@ WORKDIR /srv
 RUN CGO_ENABLED=0 go build -a -v -o /certretrieval -gcflags="all=-N -l"  ./cmd/certretrieval
 
 
-#FROM gcr.io/distroless/static
-FROM archlinux:latest
-#FROM debian:latest
+FROM gcr.io/distroless/static
 
 COPY --from=builder /certretrieval /certretrieval
 COPY --from=builder /go/bin/dlv /
