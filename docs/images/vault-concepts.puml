@@ -1,0 +1,17 @@
+@startuml
+
+class Entity
+class Authentication
+class EntityAlias
+class Policy
+class Capability
+class Role
+
+Entity "*"--"*" Authentication : authenticated by
+(Entity, Authentication) .. EntityAlias
+
+Policy "1"*--"*" Capability : Path
+Authentication *--"*" Role 
+Role "*" o-- "*" Policy: is associated with
+
+@enduml
