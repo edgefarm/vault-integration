@@ -64,7 +64,7 @@ With the running CA the configuration for the edge nodes may be created. The fol
 * Distribute the token to the edge nodes
 
 
-## Policy creation
+## Policy Creation
 The first step is to create a _generic_ policy that opens access to the REST API of Vault that is required to issue new certificates:
 
     cat <<EOF|vault policy write pki-client -
@@ -77,7 +77,7 @@ The first step is to create a _generic_ policy that opens access to the REST API
 This policy allows to _write_ to the _pki/client_ endpoint in the role "client", which will issue a suitable client certificate.
 
 
-## Role definition
+## Role Definition
 With the policy in place, the referenced client role must be created:
 
     vault write pki/roles/client ext_key_usage=ClientAuth allowed_domains_template=true allowed_domains={{identity.entity.metadata.common_name}} allow_bare_domains=true
@@ -89,7 +89,7 @@ The above role definition is a little "tricky" and contains the following defini
 * The passed common_name must be equal to the definition of an associated entity, effectively fixing the common name that may be requested (the common_name attribute _must_ be passed when requesting a certificate)
 * The final parameter _allow_bare_domains_ prevents the requesting of wildcard- or subdomain common_names
 
-## Entity definition
+## Entity Definition
 To put the role defined above to use, an entity has to be defined _for every edgenode_ that will request certificates
 
     vault write identity/entity name=edge0.rivendell.home metadata=common_name=edge0.rivendell.home
@@ -98,7 +98,7 @@ This creates a new entity named _edge0_ that has a common_name metadata attribut
 _edge0.rivendell.home_. With the role defined above this will limit the common_name
 attribute of a certificate request to this fixed name.
 
-## Login token creation
+## Login Token Creation
 After the configuration is in place, a login token has to be created for the entity.
 Following the Vault philosophy this is done in following steps:
 
@@ -131,7 +131,7 @@ To create the bridge from the authentication request to the entity represented b
 
 The resulting token may have a limited TTL (24h for this test) and is distributed to the edge nodes
 
-## Testing the setup
+## Testing the Setup
 
 After completion of all steps, it should be possible to create certificates with the token created in the last step:
 
@@ -164,3 +164,68 @@ Additionally, with the token generated above, it is not possible to invoke any o
     * 1 error occurred:
             * permission denied
 
+# Configuration for Cloud Hub
+
+This describes the configuration of the PKI for usage by the cloud hub. The steps are very similar to those required
+by the edge nodes
+## Policy Definition
+
+A Vault policy is required to allow access to the certification generation functionality:
+
+    vault policy write pki-server - << EOF
+    path "/pki/issue/server" {
+        capabilities = [ "create","update" ]
+    }
+    EOF
+
+## Role Definition
+
+A role has to be defined, that defines the parameters
+
+    vault write pki/roles/server ext_key_usage=ServerAuth allowed_domains=ci4rail.com allow_subdomains=true
+
+This role defines a much more lenient settings for creating server certificates. The above example does not impose restrictions
+on the certificates subject.
+
+## Auth Method Configuration
+Enable kubernetes auth method
+
+    vault auth enable kubernetes
+
+Configure the auth method to allow access to the cluster. For minikube:
+
+    vault write auth/kubernetes/config kubernetes_host=https://$(minikube ip):8443 kubernetes_ca_crt=$HOME/.minikube/ca.crt
+
+(adapt the port as needed). This must be adapted the actual cluster setup used.
+
+The cloudcore deployment should already have created a service account:
+
+    kubectl -n kubeedge get serviceaccount cloudcore -o yaml
+
+if this is missing, create a new service account:
+    
+    kubectl -n kubeedge create serviceaccount cloudcore
+
+Create a role that binds the serviceaccount, resp. it's secret, to a Vault role. This role defines the policies available to the serviceaccount user. Additionally, the service account(s) acccepted for kubernetes authentication are defined.
+    
+    vault write auth/kubernetes/role/cloudcore bound_service_account_names=cloudcore bound_service_account_namespaces=kubeedge token_policies=pki-server alias_name_source=serviceaccount_name token_no_default_policy=true
+
+
+## Entity Definition
+Create a new entity representing the cloudcore server
+
+    vault write identity/entity name=cloudcore.rivendell.home
+
+Create an alias that associates the entity with the kubernetes login mechanism, i.e. when logging in using kubernetes the alias creates the brige to the entity
+
+
+    # Determine the entity id
+    export ID=$(vault read -format=json identity/entity/name/cloudcore.rivendell.home|jq -r .data.id)
+
+    # Determine the internal accessor id of the kubernetes auth method
+    export ACCESSOR=$(vault auth list -format=json|jq -r '.["kubernetes/"].accessor')
+
+    # Link the entity to the kubernetes auth method
+    vault write identity/entity-alias canonical_id=$ID mount_accessor=$ACCESSOR name=kubeedge/cloudcore
+
+After these steps, a pod may be using the service account secret (that has been automatically injected into the pod) to authenticate to Vault. A code example may be found [here](https://www.vaultproject.io/docs/auth/kubernetes#code-example)
