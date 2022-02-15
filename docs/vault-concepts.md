@@ -35,7 +35,7 @@ The following concepts of Vault are relevant for the understanding of the integr
 Note that these explanations have been condensed to relevant parts. For more in-depth
 information see the associated links
 
-![](http://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/edgefarm/vault-integration/vault/docs/images/vault-concepts.puml)
+![](http://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/edgefarm/vault-integration/main/docs/images/vault-concepts.puml)
 
 
 # [Policies](https://www.vaultproject.io/docs/concepts/policies)
