@@ -27,3 +27,8 @@ The process may be configured using command line parameters and environment vari
 | key | KEY_FILE | Target filename for the private key associated with the new certificate, stored in PEM format | 
 | checktolerance | n/a | If defined, the validity of the current certificate is checked. If the certificate is not stale, the retrieval of a new certificate is skipped. The tolerance defines how close to the end of the validity period the certificate has to be: e.g. 80 means that the certificate is considered stale, if only 20% of the validity period remain. |
 | ttl | TTL | The time to live of the newly created  certificate. The server may impose a shorter limit. |
+
+
+# Technical documentation
+
+More in-depth documentation for concepts, setup and configuration is found [here](./docs/index.md)
