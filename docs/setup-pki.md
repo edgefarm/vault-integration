@@ -41,17 +41,17 @@ The following steps will create a CA using a self-signed root certificate. To us
         vault secrets tune -max-lease-ttl $((24*365*10))h pki
 
         # Define some static URLs that will be integrated into the generated certificates
-        vault write pki/config/urls issuing_certificates=https://vault.rivendell.home/cert crl_distribution_points=https://vault.rivendell.home/v1/pki/crl ocsp_servers=https://vault.rivendell.home/ocsp
+        vault write pki/config/urls issuing_certificates=https://vault.ci4rail.com/cert crl_distribution_points=https://vault.ci4rail.com/v1/pki/crl ocsp_servers=https://vault.ci4rail.com/ocsp
 
         # Create a self-signed root certificate and export it into a combined JSON file
-        vault write pki/root/generate/exported common_name=ca.rivendell.home -format=json > ca.json
+        vault write pki/root/generate/exported common_name=ca.ci4rail.com -format=json > ca.json
 
         # Define a role that allows creating server certificates
-        vault write pki/roles/server ext_key_usage=ServerAuth allowed_domains=rivendell.home 
+        vault write pki/roles/server ext_key_usage=ServerAuth allowed_domains=ci4rail.com 
         allow_subdomains=true
  
 The generation step will create an already signed certificate, so no further handling of a CR is required.
-The role defined in the final step allows to create server certificates for any subdomain of rivendell.home. Vault allows to restrict this much further, see the documentation for details.
+The role defined in the final step allows to create server certificates for any subdomain of ci4rail.com. Vault allows to restrict this much further, see the documentation for details.
 
 # Configuration for edge nodes
 
@@ -92,10 +92,10 @@ The above role definition is a little "tricky" and contains the following defini
 ## Entity Definition
 To put the role defined above to use, an entity has to be defined _for every edgenode_ that will request certificates
 
-    vault write identity/entity name=edge0.rivendell.home metadata=common_name=edge0.rivendell.home
+    vault write identity/entity name=edge0.ci4rail.com metadata=common_name=edge0.ci4rail.com
 
 This creates a new entity named _edge0_ that has a common_name metadata attribute of 
-_edge0.rivendell.home_. With the role defined above this will limit the common_name
+_edge0.ci4rail.com_. With the role defined above this will limit the common_name
 attribute of a certificate request to this fixed name.
 
 ## Login Token Creation
@@ -116,7 +116,7 @@ Create a role defines the resulting roles and the TTL of a token. For this examp
 To create the bridge from the authentication request to the entity represented by the token, an _entity alias_ must be defined:
 
     # Get the ID of the entity
-    export ID=$(vault read -format=json identity/entity/name/edge0.rivendell.home|jq -r .data.id)
+    export ID=$(vault read -format=json identity/entity/name/edge0.ci4rail.com|jq -r .data.id)
 
     # The the internal identifier ('mount path') of the token authentication mechanism (may be found with 'vault auth list' as well)
     export ACCESSOR=$(vault read -format=json /sys/auth|jq -r '.data."token/".accessor')
@@ -139,7 +139,7 @@ After completion of all steps, it should be possible to create certificates with
     export VAULT_TOKEN=<the token as generated above>
 
     # Create a certificate bundle
-    vault write -format=json pki/issue/client common_name=edge0.rivendell.home|tee client.json
+    vault write -format=json pki/issue/client common_name=edge0.ci4rail.com|tee client.json
 
 The resulting file "client.json" will contain
 
@@ -158,7 +158,7 @@ Additionally, with the token generated above, it is not possible to invoke any o
     vault policy list 
     Error listing policies: Error making API request.
 
-    URL: GET https://vault.rivendell.home/v1/sys/policies/acl?list=true
+    URL: GET https://vault.ci4rail.com/v1/sys/policies/acl?list=true
     Code: 403. Errors:
 
     * 1 error occurred:
@@ -214,13 +214,13 @@ Create a role that binds the serviceaccount, resp. it's secret, to a Vault role.
 ## Entity Definition
 Create a new entity representing the cloudcore server
 
-    vault write identity/entity name=cloudcore.rivendell.home
+    vault write identity/entity name=cloudcore.ci4rail.com
 
 Create an alias that associates the entity with the kubernetes login mechanism, i.e. when logging in using kubernetes the alias creates the brige to the entity
 
 
     # Determine the entity id
-    export ID=$(vault read -format=json identity/entity/name/cloudcore.rivendell.home|jq -r .data.id)
+    export ID=$(vault read -format=json identity/entity/name/cloudcore.ci4rail.com|jq -r .data.id)
 
     # Determine the internal accessor id of the kubernetes auth method
     export ACCESSOR=$(vault auth list -format=json|jq -r '.["kubernetes/"].accessor')

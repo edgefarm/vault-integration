@@ -66,7 +66,7 @@ Integrating the retrieval into edge node itself consequently requires the config
         edgeHub:
             enable: true
             heartbeat: 2
-            httpServer: https://cloudcore.rivendell.home:10002
+            httpServer: https://cloudcore.ci4rail.com:10002
             tlsCaFile: /home/rschmitz/devel/kubeedge/_tmp/rootCA.crt
             tlsCertFile: /home/rschmitz/devel/kubeedge/_tmp/server.crt
             tlsPrivateKeyFile: /home/rschmitz/devel/kubeedge/_tmp/server.key
@@ -81,17 +81,17 @@ Integrating the retrieval into edge node itself consequently requires the config
                 # the vault role to use when authenticating
                 role: client
                 # the subject name to requset
-                commonName: edge0.rivendell.home
+                commonName: edge0.ci4rail.com
                 # the requested validity period of the certificate
                 ttl: 1h
                 # The address of the vault server
                 # (the tlsCaFile is used to validate the server certificate )
-                vault: "https://vault.rivendell.home"
+                vault: "https://vault.ci4rail.com"
             websocket:
                 enable: true
                 handshakeTimeout: 30
                 readDeadline: 15
-                server: cloudcore.rivendell.home:10000
+                server: cloudcore.ci4rail.com:10000
                 writeDeadline: 15
         edged:
             enable: true
