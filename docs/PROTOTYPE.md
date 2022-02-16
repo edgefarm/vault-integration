@@ -1,3 +1,5 @@
+# OUTDATED INTERNAL NOTES #
+
 # Bootstrapping prototype
 
 ## Setup, done as administrator

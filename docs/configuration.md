@@ -72,7 +72,6 @@ Integrating the retrieval into edge node itself consequently requires the config
             tlsPrivateKeyFile: /home/rschmitz/devel/kubeedge/_tmp/server.key
             token: "" 
             extCertificateRetrieval: true
-            tokenFile: /home/rschmitz/devel/kubeedge/_tmp/token.txt
             # the new vault configuration block
             vault:
                 # enable vault integration

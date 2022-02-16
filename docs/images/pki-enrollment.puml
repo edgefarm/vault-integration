@@ -18,57 +18,27 @@ end note
 return JWT
 
 == Initialization ==
-User -> SSP : generate script
-SSP -> Vault : create once token(JWT)
+User -> SSP : create edge node
+SSP -> Vault : create entity and entity alias
+SSP -> Vault : generate token
 return token
 
-create Script
-SSP -> Script: generate enrollment script(token)
-note left: Embed the once token in a script.
-
-SSP --> User : enrollment script
+SSP --> User : token
 note left 
 This script may be used exactly once, 
 as the contained token 
 expires after first usage.
 end note
-User -> EdgeNode : deploy(Script)
-note left: deploy the script to the new node.
-
-== Enrollment ==
-
-EdgeNode -> Script : trigger initialization
-Script -> Vault : authenticate(token)
-Vault -> Vault : void token
-Vault -> Vault : authenticate EdgeNode
-note left
-    token has a very limited lifetime
-    and cannot be renewed.
-end note
-
-Vault --> Script: enrollment token
-Script -> Vault: generate bootstrap certificate(enrollment token)
-note left
-This certificate identifies the edge node and
-allows it to request client certificates. The
-certificate has validity corresponding to the 
-maintenance intervals of the edge node. It may
-be revoked by vault.
-end note
+User -> EdgeNode : configure
+note left: provisioning of token and configuration
 
 == Communication ==
 
 alt no valid client certificate available
-    EdgeNode -> Vault : login(bootstrap certificate)
-    EdgeNode -> Vault : issue client certificate
-    note left 
-        The common name is defined by the Vault role.
-        This is a short lived certificate, e.g. 24h,
-        to enforce periodic (automatic renewal).
-        Revoking the bootstrap certificate will
-        block effectively the edge node from communicating
-        with the cloudcore.
-    end note 
+    EdgeNode -> Vault : authenticate(token)
+    return certificate
+    EdgeNode -> EdgeNode : storeToFilesystem(certificate)
+    EdgeNode -> EdgeNode : re-establish connections
 end
 EdgeNode -> CloudCore : establish communication(client certificate)
 
