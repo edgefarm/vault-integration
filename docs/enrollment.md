@@ -2,6 +2,11 @@
 
 High level receipt of the necessary steps to enroll a new device.
 
+# Overview
+
+
+![](http://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/edgefarm/vault-integration/main/docs/images/pki-enrollment.puml)
+
 # Vault configuration for new device
 
 ## Creating an entity

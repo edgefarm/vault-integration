@@ -34,7 +34,7 @@ var (
 	ErrRetrieval = fmt.Errorf("retrieval error")
 )
 
-// Config is the configuration for the certrieval
+// Config is the configuration struct for the certrieval
 type Config struct {
 	Tokenfile              string
 	Token                  string
@@ -52,7 +52,7 @@ type Config struct {
 	OutKeyfile  string
 }
 
-// Validate the configuration
+// Validate the configuration to catch problems early.
 func (c Config) Validate() error {
 	var errors []error
 	if c.Tokenfile == "" && c.Token == "" {
@@ -113,7 +113,8 @@ func New(config Config) (*CertRetrieval, error) {
 	return &CertRetrieval{Config: config}, nil
 }
 
-// UnixTime is a wrapper of time.Time with a suitable JSON marshalling
+// UnixTime is a wrapper type for time.Time. This allows marshalling and
+// unmarshalling JSON representations
 type UnixTime time.Time
 
 func (ut UnixTime) MarshalJSON() (data []byte, err error) {
@@ -132,6 +133,7 @@ func (ut *UnixTime) UnmarshalJSON(data []byte) error {
 }
 
 // StringList is a wrapper for a string slice with suitable json marshalling
+// when the value is not expressed as a JSON array
 type StringList []string
 
 func (sl StringList) MarshalJSON() ([]byte, error) {
@@ -177,7 +179,8 @@ type CertificateResponse struct {
 }
 
 // marshal serializes an arbitrary object into json and returns a io.Reader for the result.
-// Suitable for http request body definition
+// Suitable for http request body definition. Note that this will buffer the body
+// in memory
 func marshal(v interface{}) (io.Reader, error) {
 	buffer := bytes.Buffer{}
 	encoder := json.NewEncoder(&buffer)
@@ -188,10 +191,11 @@ func marshal(v interface{}) (io.Reader, error) {
 	return &buffer, nil
 }
 
+// loginViaServiceAccount authenticates to Vault using the kubernetes serviceaccount
+// engine. The code has taken directly from this example:
+// https://www.vaultproject.io/docs/auth/kubernetes#code-example and adapted slightly
 func (cr *CertRetrieval) loginViaServiceAccount() (string, error) {
 	klog.Info("Authorizing via service account")
-	// code taken directly from this example:
-	// https://www.vaultproject.io/docs/auth/kubernetes#code-example
 	config := vault.DefaultConfig()
 	config.Address = cr.Vault
 	if cr.ServerCA != "" {
@@ -202,7 +206,7 @@ func (cr *CertRetrieval) loginViaServiceAccount() (string, error) {
 
 	client, err := vault.NewClient(config)
 	if err != nil {
-		return "", fmt.Errorf("unable to initialize Vault client: %w", err)
+		return "", fmt.Errorf("%w: unable to initialize Vault client: %v", ErrRetrieval, err)
 	}
 
 	// The service-account token will be read from the path where the token's
@@ -216,22 +220,23 @@ func (cr *CertRetrieval) loginViaServiceAccount() (string, error) {
 		auth.WithServiceAccountTokenPath(ServiceAccountPath),
 	)
 	if err != nil {
-		return "", fmt.Errorf("unable to initialize Kubernetes auth method: %w", err)
+		return "", fmt.Errorf("%w: unable to initialize Kubernetes auth method: %v", ErrRetrieval, err)
 	}
 
 	authInfo, err := client.Auth().Login(context.TODO(), k8sAuth)
 	if err != nil {
-		return "", fmt.Errorf("unable to log in with Kubernetes auth: %w", err)
+		return "", fmt.Errorf("%w: unable to log in with Kubernetes auth: %v", ErrRetrieval, err)
 	}
 	if authInfo == nil {
-		return "", fmt.Errorf("no auth info was returned after login")
+		return "", fmt.Errorf("%w: no auth info was returned after login", ErrRetrieval)
 	}
 	token := authInfo.Auth.ClientToken
 	klog.Infof("Resulting token: %v", token)
 	return token, nil
 }
 
-// readToken reads the Vault token
+// readToken retrieves the Vault token from either the serviceaccount
+// mechanism or the file system
 func (cr *CertRetrieval) readToken() (string, error) {
 	_, err := os.Stat(ServiceAccountPath)
 	if err == nil {
@@ -278,7 +283,7 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 		if cr.ServerCA != "" {
 			crPem, err := os.ReadFile(cr.ServerCA)
 			if err != nil {
-				return nil, fmt.Errorf("%w: failed to read CA certificafte from %q: %v", ErrRetrieval, cr.ServerCA, err)
+				return nil, fmt.Errorf("%w: failed to read CA certificate from %q: %v", ErrRetrieval, cr.ServerCA, err)
 			}
 			block, _ := pem.Decode([]byte(crPem))
 			caCert, err := x509.ParseCertificate(block.Bytes)
@@ -391,6 +396,10 @@ func (cr *CertRetrieval) storeCertificate(certificate *CertificateResponse) erro
 	return nil
 }
 
+
+// oldCertIsStale determines, if the validity period of the current certificate
+// is nearing end of life (or is already expired). The tolerance is used
+// to retrieve a certificate early.
 func (cr *CertRetrieval) oldCertIsStale() bool {
 	if cr.Force {
 		return true
