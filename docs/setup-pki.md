@@ -47,8 +47,7 @@ The following steps will create a CA using a self-signed root certificate. To us
         vault write pki/root/generate/exported common_name=ca.ci4rail.com -format=json > ca.json
 
         # Define a role that allows creating server certificates
-        vault write pki/roles/server ext_key_usage=ServerAuth allowed_domains=ci4rail.com 
-        allow_subdomains=true
+        vault write pki/roles/server ext_key_usage=ServerAuth allowed_domains=ci4rail.com allow_subdomains=true
  
 The generation step will create an already signed certificate, so no further handling of a CR is required.
 The role defined in the final step allows to create server certificates for any subdomain of ci4rail.com. Vault allows to restrict this much further, see the documentation for details.
@@ -110,7 +109,7 @@ Following the Vault philosophy this is done in following steps:
 ### Create Token role
 Create a role defines the resulting roles and the TTL of a token. For this example the TTL is set to 24h
 
-    vault write auth/token/roles/pki-client allowed_policies=pki-client renewable=true token_explicit_max_ttl=24h token_no_default_policy=true allowed_entity_aliases=*.token
+    vault write auth/token/roles/pki-client allowed_policies=pki-client renewable=true token_explicit_max_ttl=24h token_no_default_policy=true allowed_entity_aliases="*.token"
 
 ### Create alias
 To create the bridge from the authentication request to the entity represented by the token, an _entity alias_ must be defined:
