@@ -138,7 +138,7 @@ After completion of all steps, it should be possible to create certificates with
     export VAULT_TOKEN=<the token as generated above>
 
     # Create a certificate bundle
-    vault write -format=json pki/issue/client common_name=edge0.ci4rail.com|tee client.json
+    vault write -format=json pki/issue/client common_name=edge0.ci4rail.com ttl=12h | tee client.json
 
 The resulting file "client.json" will contain
 
