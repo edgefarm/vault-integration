@@ -1,4 +1,6 @@
 # Vault Integration
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fedgefarm%2Fvault-integration.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fedgefarm%2Fvault-integration?ref=badge_shield)
+
 
 This repository provides the elements for the integration of edgefarm with [Hashicorp Vault](https://www.vaultproject.io/).
 
@@ -53,3 +55,6 @@ The file is passed using _-config_ parameter and is intended for usage within ku
 # Technical documentation
 
 More in-depth documentation for concepts, setup and configuration is found [here](./docs/index.md)
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fedgefarm%2Fvault-integration.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fedgefarm%2Fvault-integration?ref=badge_large)
