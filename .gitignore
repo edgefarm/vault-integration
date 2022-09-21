@@ -19,3 +19,7 @@ tmp
 /certretrieval
 .history
 _tmp
+test/edge.crt
+test/rootCA.crt
+test/edge.key
+token

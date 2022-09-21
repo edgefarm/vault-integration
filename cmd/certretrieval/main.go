@@ -29,6 +29,7 @@ func main() {
 	flags.StringVar(&config.OutKeyfile, "key", "", "The targetfile for the PEM encoded private key(env: KEY_FILE)")
 	flags.StringVar(&config.Role, "role", "", "The Vault role when requesting the certificate (env: ROLE)")
 	flags.StringVar(&config.ServerCA, "serverca", "", "The signing CA of the vault server certificate when requesting the certificate(env: VAULT_CACERT)")
+	flags.StringVar(&config.PKI, "pki", "pki", "The path to the PKI engine in Vault (env: VAULT_PKI)")
 	flags.StringVar(&config.Vault, "vault", "", "The vault address (env: VAULT_ADDR)")
 	flags.StringVar(&config.AuthRole, "authrole", "", "The Vault role to use, when authenticating via the k8s api. Not needed, when a token is used. (env: AUTH_ROLE)")
 	flags.DurationVar(&config.TTL, "ttl", 0, "The validity period of the certificate (env : TTL")
@@ -49,6 +50,7 @@ func main() {
 	setFallbackByEnv(&config.OutKeyfile, "KEY_FILE")
 	setFallbackByEnv(&config.Role, "ROLE")
 	setFallbackByEnv(&config.ServerCA, "VAULT_CACERT")
+	setFallbackByEnv(&config.PKI, "VAULT_PKI")
 	setFallbackByEnv(&config.Vault, "VAULT_ADDR")
 	setFallbackByEnv(&config.AuthRole, "AUTH_ROLE")
 
@@ -65,6 +67,7 @@ func main() {
 		config.OutKeyfile = props.GetString("key", config.OutKeyfile)
 		config.Role = props.GetString("role", config.OutCertfile)
 		config.ServerCA = props.GetString("serverca", config.ServerCA)
+		config.PKI = props.GetString("pki", config.PKI)
 		if val, ok := props.Get("ttl"); ok {
 			ttl, err := time.ParseDuration(val)
 			if err != nil {

@@ -8,6 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -23,7 +24,7 @@ import (
 const (
 	tmpdir  = "../../tmp"
 	keysize = 768
-	certUrl = "/v1/pki/issue/client"
+	certUrl = "/v1/%s/issue/client"
 )
 
 type MiniCa struct {
@@ -205,11 +206,12 @@ func TestRetrieval(t *testing.T) {
 	setup(t)
 	ca := newCA(t)
 
+	PKI := "pki"
 	var invocations int
 	mux := http.NewServeMux()
-	mux.HandleFunc(certUrl, certificateHandler(t, ca, &invocations))
+	mux.HandleFunc(fmt.Sprintf(certUrl, PKI), certificateHandler(t, ca, &invocations))
 	server, caCert := ca.createServer(t, mux)
-	if err:=os.WriteFile(tmpdir+"/server-ca.crt", []byte(caCert), 0755);err != nil {
+	if err := os.WriteFile(tmpdir+"/server-ca.crt", []byte(caCert), 0755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -219,6 +221,7 @@ func TestRetrieval(t *testing.T) {
 		Role:        "client",
 		Name:        "edge0.ci4rail.com",
 		ServerCA:    tmpdir + "/server-ca.crt",
+		PKI:         PKI,
 		OutCAfile:   tmpdir + "/ca.crt",
 		OutCertfile: tmpdir + "/client.crt",
 		OutKeyfile:  tmpdir + "/client.key",
@@ -256,9 +259,10 @@ func TestRetrieval(t *testing.T) {
 func TestConditionalRetrieval(t *testing.T) {
 	setup(t)
 	ca := newCA(t)
+	PKI := "pki"
 	mux := http.NewServeMux()
 	var invocations int
-	mux.HandleFunc(certUrl, certificateHandler(t, ca, &invocations))
+	mux.HandleFunc(fmt.Sprintf(certUrl, PKI), certificateHandler(t, ca, &invocations))
 	server, caCert := ca.createServer(t, mux)
 	if err := os.WriteFile(tmpdir+"/server-ca.crt", []byte(caCert), 0755); err != nil {
 		t.Fatal(err)
@@ -270,6 +274,7 @@ func TestConditionalRetrieval(t *testing.T) {
 		Role:                   "client",
 		Name:                   "edge0.ci4rail.com",
 		ServerCA:               tmpdir + "/server-ca.crt",
+		PKI:                    PKI,
 		OutCAfile:              tmpdir + "/ca.crt",
 		OutCertfile:            tmpdir + "/client.crt",
 		OutKeyfile:             tmpdir + "/client.key",

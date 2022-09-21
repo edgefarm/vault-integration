@@ -36,20 +36,34 @@ var (
 
 // Config is the configuration struct for the certrieval
 type Config struct {
-	Tokenfile              string
-	Token                  string
-	Vault                  string
-	ServerCA               string
-	Role                   string
-	AuthRole               string
-	Name                   string
+	// Tokenfile is the path to the file containing the Vault token
+	Tokenfile string
+	// Token is the Vault token
+	Token string
+	// Vault is the URL of the Vault server
+	Vault string
+	// ServerCA is the CA certificate of the Vault server
+	ServerCA string
+	// PKI is the path to the PKI engine in Vault
+	PKI string
+	// Role is the Vault role to use
+	Role string
+	// AuthRole is the Vault role to use for authentication
+	AuthRole string
+	// Name is the name of the certificate to retrieve
+	Name string
+	// ValidityCheckTolerance is the tolerance in percent for the validity check
 	ValidityCheckTolerance int64
-	Force                  bool
-	TTL                    time.Duration
-
-	OutCAfile   string
+	// Force ignores the validity check and forces retrieval
+	Force bool
+	// TTL is the requested TTL for the certificate
+	TTL time.Duration
+	// OutCAfile is the path to the file to store the CA certificate
+	OutCAfile string
+	// OutCertfile is the path to the file to store the certificate
 	OutCertfile string
-	OutKeyfile  string
+	// OutKeyfile is the path to the file to store the private key
+	OutKeyfile string
 }
 
 // Validate the configuration to catch problems early.
@@ -271,7 +285,7 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 		return nil, err
 	}
 
-	raw := cr.Vault + "/v1/pki/issue/" + cr.Role
+	raw := cr.Vault + "/v1/" + cr.PKI + "/issue/" + cr.Role
 	address, err := url.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid url %q: %v", ErrRetrieval, raw, err)
@@ -395,7 +409,6 @@ func (cr *CertRetrieval) storeCertificate(certificate *CertificateResponse) erro
 
 	return nil
 }
-
 
 // oldCertIsStale determines, if the validity period of the current certificate
 // is nearing end of life (or is already expired). The tolerance is used
