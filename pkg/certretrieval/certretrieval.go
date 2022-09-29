@@ -327,10 +327,11 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to create request: %v", ErrRetrieval, err)
 	}
-
+	request.Method = http.MethodPut
 	request.Header.Add("content-type", "application/json")
 	request.Header.Add("accept", "application/json")
 	request.Header.Add("X-Vault-Token", token)
+	request.Header.Add("X-Vault-Request", "true")
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("%w: request failed: %v", ErrRetrieval, err)
