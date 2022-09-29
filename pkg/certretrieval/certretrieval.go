@@ -250,32 +250,34 @@ func (cr *CertRetrieval) loginViaServiceAccount() (string, error) {
 }
 
 // readToken retrieves the Vault token from either the serviceaccount
-// mechanism or the file system
+// mechanism or the file system.
 func (cr *CertRetrieval) readToken() (string, error) {
+	if cr.Token != "" {
+		klog.Infof("Using token from env variable")
+		return cr.Token, nil
+	}
+
+	if cr.Tokenfile != "" {
+		data, err := os.ReadFile(cr.Tokenfile)
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(data)), nil
+	}
+
 	_, err := os.Stat(ServiceAccountPath)
 	if err == nil {
 		// Service account file exists, use it
 		token, err := cr.loginViaServiceAccount()
 		if err != nil {
-			return "", fmt.Errorf("failed to retrieve token via servic account: %v", err)
+			return "", fmt.Errorf("failed to retrieve token via service account: %v", err)
 		}
 		return token, nil
 	} else {
 		klog.Warningf("Cannot read service account file, continuing")
 	}
 
-	if cr.Token != "" {
-		klog.Infof("Using token from env variable")
-		return cr.Token, nil
-	}
-
-	data, err := os.ReadFile(cr.Tokenfile)
-	if err != nil {
-		return "", err
-	}
-	token := strings.TrimSpace(string(data))
-
-	return token, nil
+	return "", fmt.Errorf("Failed to retrieve the token from any source (Token, Tokenfile or Service Account)")
 }
 
 // retrieveCert executes the http request to retrieve a new certificate from vault
