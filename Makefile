@@ -1,5 +1,5 @@
-REPOSITORY ?= $(shell minikube ip):5000
 TAG ?= $(shell git describe --always)
+GO_LDFLAGS = -tags 'netgo osusergo static_build'
 
 DOCS = docs/index.pdf \
 	docs/configuration.pdf \
@@ -10,24 +10,14 @@ DOCS = docs/index.pdf \
 all : install
 
 install : test
-	go install -v ./cmd/certretrieval
+	go install $(GO_LDFLAGS) -v ./cmd/certretrieval
 
 build : 
-	go build -v ./cmd/certretrieval
+	go build $(GO_LDFLAGS) -v ./cmd/certretrieval
 
 test : build
 	go test ./pkg/certretrieval
 
-
-docker : docker.image docker.push
-
-docker.image : 
-	docker build -t $(REPOSITORY)/certretrieval:$(TAG) .
-	docker tag $(REPOSITORY)/certretrieval:$(TAG) $(REPOSITORY)/certretrieval:latest
-
-docker.push : 
-	docker push $(REPOSITORY)/certretrieval:$(TAG)
-	docker push $(REPOSITORY)/certretrieval:latest
 
 %.pdf : %.md
 	mkdir -p tmp/docs

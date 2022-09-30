@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -217,9 +218,9 @@ func TestRetrieval(t *testing.T) {
 
 	config := Config{
 		Tokenfile:   tmpdir + "/token.txt",
-		Vault:       server.URL,
+		Address:     server.URL,
 		Role:        "client",
-		Name:        "edge0.ci4rail.com",
+		Name:        "edge0.edgefarm.io",
 		ServerCA:    tmpdir + "/server-ca.crt",
 		PKI:         PKI,
 		OutCAfile:   tmpdir + "/ca.crt",
@@ -270,9 +271,9 @@ func TestConditionalRetrieval(t *testing.T) {
 
 	config := Config{
 		Tokenfile:              tmpdir + "/token.txt",
-		Vault:                  server.URL,
+		Address:                server.URL,
 		Role:                   "client",
-		Name:                   "edge0.ci4rail.com",
+		Name:                   "edge0.edgefarm.io",
 		ServerCA:               tmpdir + "/server-ca.crt",
 		PKI:                    PKI,
 		OutCAfile:              tmpdir + "/ca.crt",
@@ -296,4 +297,14 @@ func TestConditionalRetrieval(t *testing.T) {
 		t.Errorf("Wrong number of retrievals, expected %d but got %d", expected, invocations)
 	}
 
+}
+
+func TestCommaSeperatedToStringList(t *testing.T) {
+	assert := assert.New(t)
+
+	list := CommaSeperatedToStringList("a,b,c")
+	assert.Equal(3, len(list))
+	assert.Equal("a", list[0])
+	assert.Equal("b", list[1])
+	assert.Equal("c", list[2])
 }
