@@ -87,7 +87,7 @@ func (c Config) Validate() error {
 	}
 
 	if c.AltNames != "" {
-		r := regexp.MustCompile(`^(\w+)(,*\w+)*$`)
+		r := regexp.MustCompile(`^(\w+\.*)(,*\w+\.*)*$`)
 		if !r.MatchString(c.AltNames) {
 			errors = append(errors, fmt.Errorf("AltNames must be a comma separated list of DNS names"))
 		}
@@ -186,7 +186,7 @@ func CommaSeperatedToStringList(s string) StringList {
 type CertificateRequest struct {
 	Name              string     `json:"name,omitempty"`
 	CommonName        string     `json:"common_name,omitempty"`
-	AltNames          StringList `json:"alt_names,omitempty"`
+	AltNames          string     `json:"alt_names,omitempty"`
 	IpSans            StringList `json:"ip_sans,omitempty"`
 	UriSans           StringList `json:"uri_sans,omitempty"`
 	OtherSans         StringList `json:"other_sans,omitempty"`
@@ -345,7 +345,7 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 	certRequest := CertificateRequest{CommonName: cr.Name}
 
 	if cr.AltNames != "" {
-		certRequest.AltNames = CommaSeperatedToStringList(cr.AltNames)
+		certRequest.AltNames = cr.AltNames
 	}
 
 	if cr.TTL > 0 {
