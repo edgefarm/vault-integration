@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt"
 	vault "github.com/hashicorp/vault/api"
 	auth "github.com/hashicorp/vault/api/auth/kubernetes"
 	"k8s.io/klog/v2"
@@ -275,35 +276,64 @@ func (cr *CertRetrieval) loginViaServiceAccount() (string, error) {
 	return token, nil
 }
 
-// readToken retrieves the Vault token from either the serviceaccount
-// mechanism or the file system.
-func (cr *CertRetrieval) readToken() (string, error) {
-	if cr.Token != "" {
-		klog.Infof("Using token from env variable")
-		return cr.Token, nil
+// checkIfServiceAccountToken parses the given token and returns true if it is a service account token
+func checkIfServiceAccountToken(tokenString string) bool {
+	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
+	if err != nil {
+		return false
 	}
-
-	if cr.Tokenfile != "" {
-		data, err := os.ReadFile(cr.Tokenfile)
-		if err != nil {
-			return "", err
+	if claims, ok := token.Claims.(jwt.MapClaims); ok {
+		if _, ok := claims["kubernetes.io"]; ok {
+			kubernetes := claims["kubernetes.io"].(map[string]interface{})
+			if _, ok := kubernetes["namespace"]; !ok {
+				return false
+			}
+			if _, ok := kubernetes["pod"]; !ok {
+				return false
+			}
+			if _, ok := kubernetes["serviceaccount"]; !ok {
+				return false
+			}
 		}
-		return strings.TrimSpace(string(data)), nil
 	}
+	return true
+}
 
-	_, err := os.Stat(ServiceAccountPath)
-	if err == nil {
-		// Service account file exists, use it
+func (cr *CertRetrieval) returnVaultTokenByServiceAccount(tokenfile string) (string, error) {
+	data, err := os.ReadFile(tokenfile)
+	if err != nil {
+		return "", err
+	}
+	tokenRead := strings.TrimSpace(string(data))
+
+	// Check if the token is a service account token and if so, use it to login to vault and return the vault token.
+	// Otherwise, return the token as is because it is already a vault token.
+	if checkIfServiceAccountToken(tokenRead) {
 		token, err := cr.loginViaServiceAccount()
 		if err != nil {
 			return "", fmt.Errorf("failed to retrieve token via service account: %v", err)
 		}
 		return token, nil
 	} else {
-		klog.Warningf("Cannot read service account file, continuing")
+		return tokenRead, nil
 	}
+}
 
-	return "", fmt.Errorf("Failed to retrieve the token from any source (Token, Tokenfile or Service Account)")
+// readToken evaluates different sources for the token.
+// The order of precedence is:
+// 1. Setting "token"
+// 2. Setting "tokenFile"
+// 3. Setting "reading token from service account and ask vault for a token"
+func (cr *CertRetrieval) readToken() (string, error) {
+	if cr.Token != "" {
+		klog.Infof("Using token from env variable")
+		return cr.Token, nil
+	}
+	if cr.Tokenfile != "" {
+		return cr.returnVaultTokenByServiceAccount(cr.Tokenfile)
+	} else {
+		return cr.returnVaultTokenByServiceAccount(ServiceAccountPath)
+	}
 }
 
 // retrieveCert executes the http request to retrieve a new certificate from vault
