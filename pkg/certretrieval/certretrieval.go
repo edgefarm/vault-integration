@@ -24,6 +24,7 @@ import (
 	vault "github.com/hashicorp/vault/api"
 	auth "github.com/hashicorp/vault/api/auth/kubernetes"
 	"k8s.io/klog/v2"
+	"moul.io/http2curl"
 )
 
 const (
@@ -397,6 +398,11 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 	request.Header.Add("accept", "application/json")
 	request.Header.Add("X-Vault-Token", token)
 	request.Header.Add("X-Vault-Request", "true")
+
+	if os.Getenv("VAULT_CURL_DEBUG") != "" {
+		fmt.Println(http2curl.GetCurlCommand(request))
+	}
+
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("%w: request failed: %v", ErrRetrieval, err)
