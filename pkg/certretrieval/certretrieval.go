@@ -89,7 +89,7 @@ func (c Config) Validate() error {
 	}
 
 	if c.AltNames != "" {
-		r := regexp.MustCompile(`^(\w+\.*)(,*\w+\.*)*$`)
+		r := regexp.MustCompile(`^([\w+\.\*-]+)(,[\w+\.\*-]+)*$`)
 		if !r.MatchString(c.AltNames) {
 			errors = append(errors, fmt.Errorf("AltNames must be a comma separated list of DNS names"))
 		}
