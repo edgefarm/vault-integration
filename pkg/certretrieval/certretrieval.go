@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -61,6 +62,8 @@ type Config struct {
 	// These can be host names or email addresses; they will be parsed into their respective fields.
 	// If any requested names do not match role policy, the entire request will be denied.
 	AltNames string `json:"alt_names,omitempty"`
+	// IpSans specifies requested IP Subject Alternative Names, in a comma-delimited list.
+	IpSans string `json:"ip_sans,omitempty"`
 	// ValidityCheckTolerance is the tolerance in percent for the validity check
 	ValidityCheckTolerance int64 `json:"validity_check_tolerance"`
 	// Force ignores the validity check and forces retrieval
@@ -92,6 +95,17 @@ func (c Config) Validate() error {
 		r := regexp.MustCompile(`^(\w+\.*)(,*\w+\.*)*$`)
 		if !r.MatchString(c.AltNames) {
 			errors = append(errors, fmt.Errorf("AltNames must be a comma separated list of DNS names"))
+		}
+	}
+
+	// check if IpSans is a comma separated list of valid IP addresses
+	if c.IpSans != "" {
+		ips := strings.Split(c.IpSans, ",")
+		for _, ip := range ips {
+			if net.ParseIP(ip) == nil {
+				errors = append(errors, fmt.Errorf("IpSans must be a comma separated list of valid IP addresses"))
+				break
+			}
 		}
 	}
 
@@ -189,7 +203,7 @@ type CertificateRequest struct {
 	Name              string     `json:"name,omitempty"`
 	CommonName        string     `json:"common_name,omitempty"`
 	AltNames          string     `json:"alt_names,omitempty"`
-	IpSans            StringList `json:"ip_sans,omitempty"`
+	IpSans            string     `json:"ip_sans,omitempty"`
 	UriSans           StringList `json:"uri_sans,omitempty"`
 	OtherSans         StringList `json:"other_sans,omitempty"`
 	TTL               string     `json:"ttl,omitempty"`
@@ -377,6 +391,10 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 
 	if cr.AltNames != "" {
 		certRequest.AltNames = cr.AltNames
+	}
+
+	if cr.IpSans != "" {
+		certRequest.IpSans = cr.IpSans
 	}
 
 	if cr.TTL > 0 {
