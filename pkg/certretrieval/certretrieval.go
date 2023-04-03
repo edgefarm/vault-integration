@@ -11,17 +11,21 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt"
 	vault "github.com/hashicorp/vault/api"
 	auth "github.com/hashicorp/vault/api/auth/kubernetes"
 	"k8s.io/klog/v2"
+	"moul.io/http2curl"
 )
 
 const (
@@ -36,34 +40,43 @@ var (
 
 // Config is the configuration struct for the certrieval
 type Config struct {
-	// Tokenfile is the path to the file containing the Vault token
-	Tokenfile string
-	// Token is the Vault token
-	Token string
-	// Vault is the URL of the Vault server
-	Vault string
+	// Token is the Vault token that can be passed directly. It is evaluated first.
+	// If set, Tokenfile is ignored.
+	Token string `json:"token,omitempty"`
+	// Tokenfile is the path to the file containing the Vault token. It get's evaluated second only if
+	// Token is not set. If Token and Tokenfile are not set, the service account token is used.
+	Tokenfile string `json:"tokenfile,omitempty"`
+	// Address is the URL of the Vault server, e.g. "https://vault.example.com:8200"
+	Address string `json:"vault"`
 	// ServerCA is the CA certificate of the Vault server
-	ServerCA string
+	ServerCA string `json:"serverca,omitempty"`
 	// PKI is the path to the PKI engine in Vault
-	PKI string
+	PKI string `json:"pki"`
 	// Role is the Vault role to use
-	Role string
+	Role string `json:"role"`
 	// AuthRole is the Vault role to use for authentication
-	AuthRole string
-	// Name is the name of the certificate to retrieve
-	Name string
+	AuthRole string `json:"authrole"`
+	// Name is the name of the certificate to retrieve, e.g. "myservice.example.com"
+	Name string `json:"name"`
+	// AltNames specifies requested Subject Alternative Names, in a comma-delimited list.
+	// These can be host names or email addresses; they will be parsed into their respective fields.
+	// If any requested names do not match role policy, the entire request will be denied.
+	AltNames string `json:"alt_names,omitempty"`
+	// IpSans specifies requested IP Subject Alternative Names, in a comma-delimited list.
+	IpSans string `json:"ip_sans,omitempty"`
 	// ValidityCheckTolerance is the tolerance in percent for the validity check
-	ValidityCheckTolerance int64
+	ValidityCheckTolerance int64 `json:"validity_check_tolerance"`
 	// Force ignores the validity check and forces retrieval
-	Force bool
-	// TTL is the requested TTL for the certificate
-	TTL time.Duration
+	Force bool `json:"force"`
+	// TTL specifies requested Time To Live for the certificate. Cannot be greater than the role's max_ttl value.
+	// If not provided, the role's ttl value will be used.
+	TTL time.Duration `json:"ttl,omitempty"`
 	// OutCAfile is the path to the file to store the CA certificate
-	OutCAfile string
+	OutCAfile string `json:"outcafile"`
 	// OutCertfile is the path to the file to store the certificate
-	OutCertfile string
+	OutCertfile string `json:"outcertfile"`
 	// OutKeyfile is the path to the file to store the private key
-	OutKeyfile string
+	OutKeyfile string `json:"outkeyfile"`
 }
 
 // Validate the configuration to catch problems early.
@@ -78,7 +91,29 @@ func (c Config) Validate() error {
 		}
 	}
 
-	if c.Vault == "" {
+	if c.AltNames != "" {
+		r := regexp.MustCompile(`^([\w+\.\*-]+)(,[\w+\.\*-]+)*$`)
+		if !r.MatchString(c.AltNames) {
+			errors = append(errors, fmt.Errorf("AltNames must be a comma separated list of DNS names"))
+		}
+	}
+
+	// check if IpSans is a comma separated list of valid IP addresses
+	if c.IpSans != "" {
+		ips := strings.Split(c.IpSans, ",")
+		for _, ip := range ips {
+			if net.ParseIP(ip) == nil {
+				errors = append(errors, fmt.Errorf("IpSans must be a comma separated list of valid IP addresses"))
+				break
+			}
+		}
+	}
+
+	if c.PKI == "" {
+		errors = append(errors, fmt.Errorf("PKI not defined"))
+	}
+
+	if c.Address == "" {
 		errors = append(errors, fmt.Errorf("vault not defined"))
 	}
 
@@ -159,12 +194,16 @@ func (sl *StringList) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func CommaSeperatedToStringList(s string) StringList {
+	return strings.Split(s, ",")
+}
+
 // CertificateRequest implements the Vault certificate requests
 type CertificateRequest struct {
 	Name              string     `json:"name,omitempty"`
 	CommonName        string     `json:"common_name,omitempty"`
-	AltNames          StringList `json:"alt_names,omitempty"`
-	IpSans            StringList `json:"ip_sans,omitempty"`
+	AltNames          string     `json:"alt_names,omitempty"`
+	IpSans            string     `json:"ip_sans,omitempty"`
 	UriSans           StringList `json:"uri_sans,omitempty"`
 	OtherSans         StringList `json:"other_sans,omitempty"`
 	TTL               string     `json:"ttl,omitempty"`
@@ -211,11 +250,14 @@ func marshal(v interface{}) (io.Reader, error) {
 func (cr *CertRetrieval) loginViaServiceAccount() (string, error) {
 	klog.Info("Authorizing via service account")
 	config := vault.DefaultConfig()
-	config.Address = cr.Vault
+	config.Address = cr.Address
 	if cr.ServerCA != "" {
-		config.ConfigureTLS(&vault.TLSConfig{
+		err := config.ConfigureTLS(&vault.TLSConfig{
 			CACert: cr.ServerCA,
 		})
+		if err != nil {
+			return "", fmt.Errorf("%w: failed to configure TLS: %v", ErrRetrieval, err)
+		}
 	}
 
 	client, err := vault.NewClient(config)
@@ -249,33 +291,64 @@ func (cr *CertRetrieval) loginViaServiceAccount() (string, error) {
 	return token, nil
 }
 
-// readToken retrieves the Vault token from either the serviceaccount
-// mechanism or the file system
-func (cr *CertRetrieval) readToken() (string, error) {
-	_, err := os.Stat(ServiceAccountPath)
-	if err == nil {
-		// Service account file exists, use it
+// checkIfServiceAccountToken parses the given token and returns true if it is a service account token
+func checkIfServiceAccountToken(tokenString string) bool {
+	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
+	if err != nil {
+		return false
+	}
+	if claims, ok := token.Claims.(jwt.MapClaims); ok {
+		if _, ok := claims["kubernetes.io"]; ok {
+			kubernetes := claims["kubernetes.io"].(map[string]interface{})
+			if _, ok := kubernetes["namespace"]; !ok {
+				return false
+			}
+			if _, ok := kubernetes["pod"]; !ok {
+				return false
+			}
+			if _, ok := kubernetes["serviceaccount"]; !ok {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (cr *CertRetrieval) returnVaultTokenByServiceAccount(tokenfile string) (string, error) {
+	data, err := os.ReadFile(tokenfile)
+	if err != nil {
+		return "", err
+	}
+	tokenRead := strings.TrimSpace(string(data))
+
+	// Check if the token is a service account token and if so, use it to login to vault and return the vault token.
+	// Otherwise, return the token as is because it is already a vault token.
+	if checkIfServiceAccountToken(tokenRead) {
 		token, err := cr.loginViaServiceAccount()
 		if err != nil {
-			return "", fmt.Errorf("failed to retrieve token via servic account: %v", err)
+			return "", fmt.Errorf("failed to retrieve token via service account: %v", err)
 		}
 		return token, nil
 	} else {
-		klog.Warningf("Cannot read service account file, continuing")
+		return tokenRead, nil
 	}
+}
 
+// readToken evaluates different sources for the token.
+// The order of precedence is:
+// 1. Setting "token"
+// 2. Setting "tokenFile"
+// 3. Setting "reading token from service account and ask vault for a token"
+func (cr *CertRetrieval) readToken() (string, error) {
 	if cr.Token != "" {
 		klog.Infof("Using token from env variable")
 		return cr.Token, nil
 	}
-
-	data, err := os.ReadFile(cr.Tokenfile)
-	if err != nil {
-		return "", err
+	if cr.Tokenfile != "" {
+		return cr.returnVaultTokenByServiceAccount(cr.Tokenfile)
+	} else {
+		return cr.returnVaultTokenByServiceAccount(ServiceAccountPath)
 	}
-	token := strings.TrimSpace(string(data))
-
-	return token, nil
 }
 
 // retrieveCert executes the http request to retrieve a new certificate from vault
@@ -285,7 +358,7 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 		return nil, err
 	}
 
-	raw := cr.Vault + "/v1/" + cr.PKI + "/issue/" + cr.Role
+	raw := cr.Address + "/v1/" + cr.PKI + "/issue/" + cr.Role
 	address, err := url.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid url %q: %v", ErrRetrieval, raw, err)
@@ -313,11 +386,22 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 		}
 	}
 	client := http.Client{Transport: &transport}
+
 	certRequest := CertificateRequest{CommonName: cr.Name}
+
+	if cr.AltNames != "" {
+		certRequest.AltNames = cr.AltNames
+	}
+
+	if cr.IpSans != "" {
+		certRequest.IpSans = cr.IpSans
+	}
+
 	if cr.TTL > 0 {
 		certRequest.TTL = cr.TTL.String()
 		klog.Infof("Request certificate with TTL %v", certRequest.TTL)
 	}
+
 	requestBody, err := marshal(certRequest)
 	if err != nil {
 		return nil, err
@@ -327,10 +411,16 @@ func (cr *CertRetrieval) retrieveCert() (*CertificateResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to create request: %v", ErrRetrieval, err)
 	}
-
+	request.Method = http.MethodPut
 	request.Header.Add("content-type", "application/json")
 	request.Header.Add("accept", "application/json")
 	request.Header.Add("X-Vault-Token", token)
+	request.Header.Add("X-Vault-Request", "true")
+
+	if os.Getenv("VAULT_CURL_DEBUG") != "" {
+		fmt.Println(http2curl.GetCurlCommand(request))
+	}
+
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("%w: request failed: %v", ErrRetrieval, err)

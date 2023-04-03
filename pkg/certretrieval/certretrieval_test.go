@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -217,9 +218,9 @@ func TestRetrieval(t *testing.T) {
 
 	config := Config{
 		Tokenfile:   tmpdir + "/token.txt",
-		Vault:       server.URL,
+		Address:     server.URL,
 		Role:        "client",
-		Name:        "edge0.ci4rail.com",
+		Name:        "edge0.edgefarm.io",
 		ServerCA:    tmpdir + "/server-ca.crt",
 		PKI:         PKI,
 		OutCAfile:   tmpdir + "/ca.crt",
@@ -270,9 +271,9 @@ func TestConditionalRetrieval(t *testing.T) {
 
 	config := Config{
 		Tokenfile:              tmpdir + "/token.txt",
-		Vault:                  server.URL,
+		Address:                server.URL,
 		Role:                   "client",
-		Name:                   "edge0.ci4rail.com",
+		Name:                   "edge0.edgefarm.io",
 		ServerCA:               tmpdir + "/server-ca.crt",
 		PKI:                    PKI,
 		OutCAfile:              tmpdir + "/ca.crt",
@@ -296,4 +297,26 @@ func TestConditionalRetrieval(t *testing.T) {
 		t.Errorf("Wrong number of retrievals, expected %d but got %d", expected, invocations)
 	}
 
+}
+
+func TestCommaSeperatedToStringList(t *testing.T) {
+	assert := assert.New(t)
+
+	list := CommaSeperatedToStringList("a,b,c")
+	assert.Equal(3, len(list))
+	assert.Equal("a", list[0])
+	assert.Equal("b", list[1])
+	assert.Equal("c", list[2])
+}
+
+func TestCheckIfServiceAccountToken(t *testing.T) {
+	assert := assert.New(t)
+
+	jwttoken := "eyJhbGciOiJFUzI1NiIsImtpZCI6IkZkOFJkZjRqZnZIUHFkRnZkMm5CcW9rMEdoYUFpWTRUNlFsTmNmMXRYMncifQ.eyJhdWQiOlsiaHR0cHM6Ly8xMC41LjAuMTo2NDQzIl0sImV4cCI6MTY5NjA3MzAxMiwiaWF0IjoxNjY0NTM3MDEyLCJpc3MiOiJodHRwczovLzEwLjUuMC4xOjY0NDMiLCJrdWJlcm5ldGVzLmlvIjp7Im5hbWVzcGFjZSI6ImVkZ2Utbm9kZXMiLCJwb2QiOnsibmFtZSI6InZpcnR1YWwtNzRkYmZkNjdiYy1rNnpuciIsInVpZCI6IjZlZWE5Y2Y3LTk5MzktNDMwMy1iYTMzLTVlOTUxMmE0MTI4ZiJ9LCJzZXJ2aWNlYWNjb3VudCI6eyJuYW1lIjoidmlydHVhbCIsInVpZCI6IjFkMDI2NzZkLWUyNGUtNDY4OC05ZTJkLWY2YzZjZWM0Zjg3ZCJ9LCJ3YXJuYWZ0ZXIiOjE2NjQ1NDA2MTl9LCJuYmYiOjE2NjQ1MzcwMTIsInN1YiI6InN5c3RlbTpzZXJ2aWNlYWNjb3VudDplZGdlLW5vZGVzOnZpcnR1YWwifQ.C8LVVeZka8spiGUAWvKCAjutQ2WNRfvOIgDt9Yd8SFj1tl41MWeqZBsjY0zdfZQbd1cOCb9pWZDMILHLCUnmFQ"
+	q := checkIfServiceAccountToken(jwttoken)
+	assert.True(q)
+
+	vaulttoken := "s.zOLD8aXhDmAtbMo4goQBxooF"
+	q = checkIfServiceAccountToken(vaulttoken)
+	assert.False(q)
 }

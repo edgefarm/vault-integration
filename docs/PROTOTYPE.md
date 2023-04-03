@@ -12,13 +12,13 @@
 
     # Tune some values
     vault secrets tune -max-lease-ttl $((24*365*10))h pki
-    vault write pki/config/urls issuing_certificates=https://vault.ci4rail.com/cert crl_distribution_points=https://vault.ci4rail.com/v1/pki/crl ocsp_servers=https://vault.ci4rail.com/ocsp
+    vault write pki/config/urls issuing_certificates=https://vault.edgefarm.io/cert crl_distribution_points=https://vault.edgefarm.io/v1/pki/crl ocsp_servers=https://vault.edgefarm.io/ocsp
 
     # Create a self signed root certificate
-    vault write -field=certificate pki/root/generate/internal common_name=ca.ci4rail.com ttl=$((24*365*10))h
+    vault write -field=certificate pki/root/generate/internal common_name=ca.edgefarm.io ttl=$((24*365*10))h
 
     # Define a role for creating server certificates
-    vault write pki/roles/server ext_key_usage=ServerAuth allowed_domains=ci4rail.com allow_subdomains=true
+    vault write pki/roles/server ext_key_usage=ServerAuth allowed_domains=edgefarm.io allow_subdomains=true
 
     # Define a policy that allows to retrieve certificates
     cat <<EOF|vault policy write pki-client -
@@ -58,10 +58,10 @@ To perform the bootstrap process, a simple policy is required that allows to cre
 The edgenode is represented by a manually created entity. In Vault, every entity has auth-system specific aliases that may contain additional metadata specific for this auth system. So, we
 create a user for the edge node and attach the common name as metadata attribute to the metadata of the associated entity alias (specific to the approle).
 
-    vault write identity/entity name=edge0.ci4rail.com metadata=common_name=edge0.ci4rail.com
+    vault write identity/entity name=edge0.edgefarm.io metadata=common_name=edge0.edgefarm.io
     
     # Get the ID of the created entity
-    ID=$(vault read -format=json identity/entity/name/edge0.ci4rail.com|jq -r .data.id)
+    ID=$(vault read -format=json identity/entity/name/edge0.edgefarm.io|jq -r .data.id)
 
 ### Create an alias
 
@@ -149,7 +149,7 @@ When this setup is complete, the login may be done without existing Vault token 
 
 * The token now allows to create certificates
 
-        vault write -format=json pki/issue/client common_name=edge0.ci4rail.com|tee private/client.json
+        vault write -format=json pki/issue/client common_name=edge0.edgefarm.io|tee private/client.json
     Note that here only the correct common_name can be used as well!
 
 ## On the edgenode using the limited token generated above
@@ -178,7 +178,7 @@ This secret ID will be valid to 7days to create an access token. The generated t
 
 After the successful login, certificates may be created:
 
-    vault write -format=json pki/issue/client common_name=edge0.ci4rail.com 
+    vault write -format=json pki/issue/client common_name=edge0.edgefarm.io 
 
 Note that due to the template policy defined above, it is not possible to define any other common name!
 

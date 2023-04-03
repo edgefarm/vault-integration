@@ -39,14 +39,14 @@ Example:
 
     authrole=cloudcore
     force=false
-    name=cloudcore.ci4rail.com
+    name=cloudcore.edgefarm.io
     ca=/etc/kubeedge/certs/rootCA.crt
     cert=/etc/kubeedge/certs/edge.crt
     key=/etc/kubeedge/certs/edge.key
     role=server
     serverca=/opt/certretrieval/cert/ca.crt
     ttl=24h
-    vault=https://vault.ci4rail.com
+    vault=https://vault.edgefarm.io
 
 The file is passed using _-config_ parameter and is intended for usage within kubernetes, where configuration may be passed as configmap.
 
